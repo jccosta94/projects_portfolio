@@ -67,9 +67,7 @@ The lesson is also **what stayed constant.** All three generations route through
 
 ## v3 — the current architecture
 
-The system runs as five horizontal capability layers. The diagram is laid out in [Salesforce Architect Diagramming Framework](https://medium.com/salesforce-architects) convention for readability.
-
-![System Landscape](architecture/orchestration-overview.png)
+The system runs as five horizontal capability layers, laid out below in the [Salesforce Architect Diagramming Framework](https://medium.com/salesforce-architects) convention for readability.
 
 ### Topology
 
@@ -332,15 +330,57 @@ This is the kind of "designed two options, picked the simpler one, kept the othe
 
 ## Architecture diagrams
 
-| File | What it shows |
-|---|---|
-| [`architecture/orchestration-overview.png`](./architecture/orchestration-overview.png) | Five-layer Salesforce-style system landscape — persona → experience → application → integration → data, with trust boundaries |
-| [`architecture/deployment-topology.png`](./architecture/deployment-topology.png) | C4 container-level deployment view — Firebase + local Mac + VPS |
-| `architecture/content-pipeline.png` *(TBD)* | Draft → library → approval → publish flow |
-| `architecture/publishing-workflow.png` *(TBD)* | Upload-Post fan-out + channel routing logic |
-| `architecture/media-generation-flow.png` *(TBD)* | Gemini Nano Banana + Veo 3.1 generation pipeline |
+All diagrams in this repo live inline in this README and in the case-study sub-docs, as text-style ASCII inside fenced code blocks — readable on GitHub, version-controlled, diff-able, no rendering tooling required.
 
-The orchestration-overview source is in [`architecture/skoda_architecture_sf.excalidraw`](./architecture/skoda_architecture_sf.excalidraw) — drag into [excalidraw.com](https://excalidraw.com) to edit.
+- **System landscape** (5-layer Salesforce-style: persona → experience → application → integration → data, with trust boundaries) — see [Topology](#topology) above.
+- **Editorial pipeline** (draft → library → Telegram approval → publish) — see [Topology](#topology) above.
+- **Deployment view** (C4 container-level — operator's Mac + Firebase + Upload-Post + optional VPS for the headless alternative) — see below.
+
+### Deployment view
+
+```text
++----------------------------------------------------------------------+
+| OPERATOR'S MAC (always-on, primary)                                  |
+|   +-----------------------------------------------------------+      |
+|   | Claude Cowork (desktop app)                              |      |
+|   |   + MCP servers (Firebase, Gmail, Airtable, Gemini,      |      |
+|   |     Veo, Excalidraw, computer-use, scheduled-tasks,      |      |
+|   |     custom skoda-mcp)                                    |      |
+|   |   + Python publishing library (~300 LOC)                 |      |
+|   +-----------------------------------------------------------+      |
++-------------------------+-----------------------+--------------------+
+                          |                       |
+                          | (HTTPS, bearer auth)  | (HTTPS, OAuth)
+                          v                       v
++--------------------------+   +----------------------------------------+
+| FIREBASE (Google Cloud)  |   | UPLOAD-POST.COM                        |
+|   Firestore              |   |   single fan-out to YouTube /          |
+|     leads, quote_events, |   |   Instagram / X / LinkedIn (free tier  |
+|     content_drafts       |   |   capped at 10 uploads/month)          |
+|   Hosting                |   +----------------------------------------+
+|     skoda-clever-kaufen  |
+|     blog + landing pages |   +----------------------------------------+
+|   Cloud Functions        |   | TELEGRAM BOT API                       |
+|     /api/publishBlog     |<--+   preview approval channels:           |
+|     (bearer auth)        |   |   blog-approval / social-approval /    |
++--------------------------+   |   newsletter-approval                  |
+                               +----------------------------------------+
+
++----------------------------------------------------------------------+
+| OPTIONAL HEADLESS ALTERNATIVE (warm-but-not-running)                 |
+|   Hostinger VPS · Docker · OpenClaw or Hermes Agent                  |
+|   Same publishing library, same Telegram approval flow, same         |
+|   Firebase + Upload-Post endpoints. One config-mirror away if the    |
+|   operator's day stops covering the engagement window.               |
++----------------------------------------------------------------------+
+
+GA4 + Google Ads sit outside the operator's perimeter: GA4 receives
+events from the public blog (Consent Mode v2, default-denied); Ads
+consumes GA4 conversions for bid optimisation. Firestore
+`quote_events` is the source-of-truth attribution copy.
+```
+
+Diagrams that are out of scope today and don't yet have an inline ASCII rendering: `content-pipeline` (covered partially by the editorial-pipeline ASCII above), `publishing-workflow`, `media-generation-flow`. These will get inline ASCII when the matching sections of the case study are written.
 
 ---
 

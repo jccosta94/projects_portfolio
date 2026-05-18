@@ -30,7 +30,7 @@ Second, multi-channel publishing meant maintaining four separate API integration
 
 ## V3 — Current state
 
-The current architecture, drawn in [`architecture/orchestration-overview.png`](../architecture/orchestration-overview.png), addresses both gaps.
+The current architecture, laid out as a text-style topology diagram in the [Topology section](../README.md#topology) of the repo README, addresses both gaps.
 
 Scheduling is split between two agents. The interactive agent — Anthropic Claude running in Cowork on the operator's desktop — handles in-the-moment work, the editorial decisions, the unusual posts. The scheduled agent — OpenClaw, a Dockerized Anthropic-API-backed agent on a low-cost VPS — handles the weekly cadence. It drafts content on a 10:00–21:00 window and routes previews to a Telegram channel for the operator to approve. Approved drafts flow into the same guardrail library and the same publishing surface as desktop-initiated work, so there is one editorial pipeline regardless of where the draft originated.
 

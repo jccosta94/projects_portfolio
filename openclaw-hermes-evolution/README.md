@@ -461,14 +461,12 @@ This is the **operational journal** that lets Joao audit Hermes without reading 
 
 ## Architecture diagrams
 
-| File | What it shows |
-|---|---|
-| [`architecture/openclaw-v1.excalidraw`](./architecture/openclaw-v1.excalidraw) | v1 topology — 7-agent team in one OpenClaw gateway on the VPS |
-| `architecture/hermes-agent-v2.excalidraw` *(TBD)* | v2 topology — Hermes dispatcher in Docker, Codex brain, Claude Code executor |
-| `architecture/orchestration-comparison.excalidraw` *(TBD)* | Side-by-side v1 vs v2 with model + cost annotations |
-| `architecture/deployment-flow.excalidraw` *(TBD)* | How both generations deploy code to the same Hostinger VPS |
+All diagrams in this repo live inline in this README, as text-style ASCII inside fenced code blocks — readable on GitHub, version-controlled, diff-able, no rendering tooling required.
 
-PNG exports of each live alongside the source files. The diagrams open in [excalidraw.com](https://excalidraw.com) (drag-and-drop) or any compatible editor.
+- **v1 topology** — the 7-agent team (Telegram → main · Haiku → CEO · Sonnet 4.6 → PM · Opus 4.6 → Dev + Bugfixing Dev · Opus 4.6 → QA + QA2 · Opus 4.6), with the dispatch-authorization graph and per-agent model labels. See the `### The team` section above.
+- **v1 issue lifecycle** — the issue → CEO triage → PR → human gates → deploy flow, with the three human-in-the-loop gates explicitly marked. Inline below the team diagram.
+- **v2 topology** — the single Hermes dispatcher in Docker, orchestrating Codex (gpt-5.4-mini) which shells out to Claude Code CLI as its code-writing tool. Inline in the v2 section.
+- **v1 vs v2 hybrid routing** — side-by-side dispatch tree with the `hermes-ready` label as the routing key. Inline in the migration section.
 
 ---
 
