@@ -19,7 +19,9 @@ The system runs at https://jccosta94.github.io/hugo-website/, with the first cus
 
 Pattern C is the architectural response: collapse the procedural contract into a single tool call. The agent's behaviour reduces from "execute a procedure" to "summarize a tool return." There's nothing for the failure mode to attach to.
 
-**Two designs, sequential. Same customer surface on top. Same model doing the same things in both — but only one of them produces reliable output.**
+**A secondary benefit, not the original motivation but very real once you're running both shapes: v2 is materially cheaper to operate.** v1 burns 5–7 inference calls per customer turn (Director translates the brief -> dispatches to specialists -> each specialist generates output -> Director synthesizes the response back). v2 burns 1–2 calls per turn (the agent picks a tool, the tool does the deterministic work in Python, the agent synthesizes the return). Same per-customer subscription tier, much lower rate-limit consumption, more headroom per pod. **Pattern C didn't just remove the failure surface — it also removed the work the model didn't need to be doing.**
+
+**Two designs, sequential. Same customer surface on top. Same model doing the same things in both — but only one of them produces reliable output, and only one of them does it at a rate the per-customer subscription can sustainably support.**
 
 
 ---
@@ -34,6 +36,7 @@ Pattern C is the architectural response: collapse the procedural contract into a
 | **Inference model**             | gpt-5.4-mini per agent (per-customer ChatGPT Plus)                                               | gpt-5.4-mini, single agent (per-customer ChatGPT Plus)                 |
 | **Where deterministic work happens** | In specialist agents' system prompts (in the model)                                              | In Python (in MCP tool servers)                                        |
 | **What the agent does**         | Decides what to do, delegates, synthesizes specialist outputs                                    | Decides what to do, picks a tool, synthesizes tool output              |
+| **Inference calls per customer turn** | 5–7 (brief translation + dispatch + specialists + synthesis)                                | 1–2 (tool selection + summary of tool return)                          |
 | **Failure mode**                | Model fabricates plausible specialist output when delegation contracts have soft preconditions   | None — Pattern C eliminates soft preconditions                         |
 | **Cross-customer isolation**    | Per-tenant Docker container + per-agent SQLite memory                                            | Per-tenant Docker container + per-tenant SQLite memory                 |
 | **Customer-facing channel**     | Telegram (default) · Slack / WhatsApp / Signal / Email (alternates)                              | Same                                                                   |
@@ -137,7 +140,7 @@ Two responses:
 - **Fix the model.** Wait for a more capable tier — `gpt-5-pro` via Codex CLI was a plan B option. But that breaks the per-customer ChatGPT Plus subscription model that makes Hugo's economics work. Indefinite wait, indefinite cost.
 - **Fix the topology.** Collapse the multi-step delegation into a single tool call. Remove the soft preconditions. Reduce the agent's role to summarizing tool returns.
 
-Fixing the topology was the shorter path and didn't require a price-point change. **That became v2.**
+Fixing the topology was the shorter path, didn't require a price-point change, **and as a side effect dramatically reduced inference work per customer turn** — 5–7 calls collapsed to 1–2, with the deterministic work moved into Python (where it costs nothing). **That became v2.**
 
 
 ---
@@ -268,6 +271,220 @@ Pattern C has been validated five times across V1 shipped features.
 | `compose-plan`              | `~/.hermes/mcp-servers/planning/`              | #83 (Pattern C origin)    |
 
 Each one follows the same shape: SKILL.md with the six canonical sections, MCP server with PEP 723 + `run.sh`, agent invokes the tool once and synthesizes the customer summary from the return.
+
+
+---
+
+## Enterprise topology · per-pod detail
+
+The Salesforce-style enterprise view: every tier, every integration, every security boundary. The v2 architecture diagram above shows the *shape*; this one shows what's actually running where, layer by layer.
+
+══════════════════════════════════════════════════════════════════════════════
+CUSTOMER-FACING LAYER
+══════════════════════════════════════════════════════════════════════════════
+
+  Customer device (phone / desktop)
+       │
+       ▼
+  ┌─ Messaging channels · one per tenant (selected at install) ───────────────┐
+  │ Telegram (default) · Slack · WhatsApp · Signal · Email                     │
+  │ Allowlist: only owner chat_id can DM the pod                              │
+  │ Tier-3 actions render as inline-button APPROVE confirmations               │
+  └────────────────────────────────────────────────────────────────────────────┘
+       │
+       │ outbound bot connection (no public webhook for Telegram)
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+NETWORK EDGE
+══════════════════════════════════════════════════════════════════════════════
+
+  ── Cloudflare Tunnel ── public ingress (OAuth callbacks · Upload-Post hooks)
+  ── Tailscale         ── admin-only SSH overlay (key-based · device allowlist)
+       │
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+HUGO TENANT POD · Docker container · one per customer · isolated runtime
+══════════════════════════════════════════════════════════════════════════════
+
+  ┌─ PROCESS SUPERVISION ─────────────────────────────────────────────────────┐
+  │ systemd / launchd                                                          │
+  │   └─ hermes-tenant-<id>.service       (one unit per pod)                  │
+  │      └─ docker-compose up · pod up                                        │
+  │ cron                                                                       │
+  │   └─ Hermes-native scheduled tasks (natural-language cron)                │
+  │   └─ pod healthchecks · log rotation                                      │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ CHANNEL ADAPTER · Hermes built-in ───────────────────────────────────────┐
+  │ Outbound bot connection to chosen channel API                              │
+  │   ── message in/out (text + voice transcription)                          │
+  │   ── file uploads (BCP, brand assets, photos)                             │
+  │   ── inline-button APPROVE recognition                                    │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ HUGO AGENT RUNTIME · Hermes process ─────────────────────────────────────┐
+  │ single-agent topology · binds tenant bot token                             │
+  │   ── skill picker (description-keyword overlap match)                     │
+  │   ── skill allowlist enforcer (only category=hugo enabled on Telegram)    │
+  │   ── tool-call dispatcher (one MCP tool per turn — Pattern C)             │
+  │   ── summarizer (synthesize customer-facing reply from tool return)       │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ BRAIN · INFERENCE TIER ──────────────────────────────────────────────────┐
+  │ Codex CLI (shell-out per turn)                                             │
+  │   └─ model: gpt-5.4-mini (accepted on ChatGPT-account auth path)          │
+  │   └─ auth: per-pod ChatGPT Plus subscription (customer's account)         │
+  │   └─ rate-limit shared across all turns in this pod                      │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ SKILLS LIBRARY · ~/.hermes/skills/hugo/ · 10 skills (5 shipped) ─────────┐
+  │ [LIVE] post-ad-hoc              ad-hoc social post (10 platforms)         │
+  │ [LIVE] presence-audit           online presence audit                     │
+  │ [LIVE] post-from-content-plan   scheduled content plan execution          │
+  │ [LIVE] reporting-lead           weekly/monthly CEO digest                 │
+  │ [LIVE] compose-plan             multi-week marketing plan                 │
+  │ [WIP]  ads-manager              Google + Meta ads launch / optimize       │
+  │ [WIP]  website-builder          per-campaign LP generation                │
+  │ [WIP]  brand-designer           creative gen via Google AI Pro            │
+  │ [WIP]  inbox-reviews-triage     Instagram inbox triage                    │
+  │ [WIP]  outreach-assistant       cold email + SEO comments                 │
+  │                                                                            │
+  │ SKILL.md canonical structure (6 sections):                                 │
+  │   1. signature triggers      4. counterfactual guardrail                  │
+  │   2. numbered tiers          5. forbidden-tokens list                     │
+  │   3. GOOD / BAD examples     6. state-readback rule                       │
+  │                                                                            │
+  │ Allowlist auto-managed by sync-hugo-skill-allowlist.py                    │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ MCP TOOL SERVERS · ~/.hermes/mcp-servers/<domain>/ · Pattern C ──────────┐
+  │ One tool call per turn · deterministic work in Python                      │
+  │ Scaffolding: PEP 723 inline deps · uv run --script · run.sh shim          │
+  │                                                                            │
+  │ marketing__*       Google Ads · Meta Ads (manager OAuth)                   │
+  │ creative__*        Veo 3 · Imagen · Nano Banana                            │
+  │ web__*             landing pages (Cloudflare Pages) · Google Business     │
+  │ inbox__*           Instagram inbox (Upload-Post API · 5-min poll)         │
+  │ outbound__*        SendGrid · SEO comment placement                        │
+  │ analytics__*       GA4 · Stripe · Codex-CLI-written Python                │
+  │ audit__*           presence audit (URL fetches + BCP extraction)          │
+  │ content_plan__*    scheduled posts from BCP content_plan frontmatter      │
+  │                                                                            │
+  │ All servers honour mode: "readback" for state retrieval                    │
+  │ All servers use Hugo-scoped env var names (never SDK auto-pickup)          │
+  │ Server naming: area-scoped, not skill-scoped                              │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ HITL GATE · code-enforced (not prompt-enforced) ─────────────────────────┐
+  │ Tier 1  auto      internal work (planning, drafts, audits, reports)       │
+  │ Tier 2  capped    bounded spend / reach (caps in MCP server wrappers)     │
+  │ Tier 3  HITL      APPROVE reply required before public action             │
+  │                                                                            │
+  │ APPROVE recognizer: phrase-list matcher (not LLM-judged)                   │
+  │ Forbidden-tokens guardrail: never emit model / path / framework names     │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ STATE + AUDIT TIER ──────────────────────────────────────────────────────┐
+  │ ~/.hermes/sessions.db              per-pod SQLite · agent session memory  │
+  │ ~/.hermes/runlog/                  audit trail · prompts · tool outputs   │
+  │ tenants/<id>/context/BCP.md        brand context profile (source of truth)│
+  │ tenants/<id>/context/plans/        multi-week marketing plans             │
+  │ tenants/<id>/context/audits/       presence audit artifacts               │
+  │ tenants/<id>/context/reports/      weekly/monthly digests                 │
+  │ tenants/<id>/context/posts/        post sidecar JSONs (idempotency)       │
+  │ tenants/<id>/context/goals.md      campaign goals · success criteria      │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ SECRETS · CONFIG · tenants/<id>/config/.env · chmod 600 ─────────────────┐
+  │ BOT_TOKEN                          channel-specific bot token             │
+  │ OWNER_CHAT_ID                      allowlisted owner channel id           │
+  │ CHATGPT_AUTH                       Codex CLI session token (per-pod)      │
+  │ UPLOAD_POST_API_KEY                Upload-Post API key                    │
+  │ UPLOAD_POST_PROFILE_USERNAME       per-tenant Upload-Post profile         │
+  │ GOOGLE_AI_PRO_API_KEY              Google AI Pro (per customer)           │
+  │ GOOGLE_ADS_OAUTH_REFRESH_TOKEN     manager-level OAuth                    │
+  │ META_ADS_OAUTH_REFRESH_TOKEN       manager-level OAuth                    │
+  │ SENDGRID_API_KEY                   outbound email                         │
+  │ GA4_OAUTH · STRIPE_API_KEY         read-only analytics                    │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  + tenant-2 pod · identical layout · isolated runtime
+  + tenant-3 pod · identical layout · isolated runtime
+  + ... (one Docker container per customer · no shared runtime state)
+       │
+       │ outbound API calls per tool invocation
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+EXTERNAL INTEGRATION LAYER  (per-pod outbound)
+══════════════════════════════════════════════════════════════════════════════
+
+  PER-CUSTOMER SUBSCRIPTIONS  (customer's card · per-pod auth · customer owns)
+    OpenAI ChatGPT Plus       Codex CLI inference for all Hugo turns
+    Google AI Pro             Veo 3 · Imagen / Nano Banana (per customer)
+    Google Ads                manager OAuth · customer billed direct
+    Meta Ads                  manager OAuth · customer billed direct
+    SendGrid                  outbound email (cold + transactional)
+    GA4                       read-only analytics pull
+    Stripe                    read-only revenue pull
+
+  HUGO-ORG SUBSCRIPTIONS  (Hugo's card · amortized across pods)
+    Upload-Post.com Basic     managed-OAuth social posting · 10 platforms
+                              IG inbound API · per-tenant profile via JWT URL
+                              webhooks: upload_completed · social_account_connected
+    Cloudflare                Tunnel (ingress) + Pages (web__ hosting)
+    Tailscale                 admin-only SSH overlay network
+    Hermes Agent runtime      MIT, Nous Research · no SaaS line item
+    VPS host                  Ubuntu · Docker · single-host multi-tenant
+
+  CUSTOMER-OWNED RESOURCES  (manager OAuth · Hugo operates, customer owns)
+    Google Ads account                  customer's own
+    Meta Ads account (FB + IG)          customer's own
+    Google Business Profile             customer's own
+    Social profiles                     TikTok · IG · YT · LinkedIn · FB
+                                        X · Threads · Pinterest · Reddit · Bluesky
+                                        connected via Upload-Post managed OAuth
+
+══════════════════════════════════════════════════════════════════════════════
+ADMIN · DATA SPINE  (Hugo-org · not per-tenant)
+══════════════════════════════════════════════════════════════════════════════
+
+  Airtable                     CRM + activity log · per-tenant workspace
+  GitHub Project board         Hugo — Build · issues / decisions / lanes
+  GitHub repo (private)        Hugo production code · jccosta94/hugo-app
+  PRD amendment log            Hugo-PRD.md · canonical decision history
+
+══════════════════════════════════════════════════════════════════════════════
+SECURITY BOUNDARIES
+══════════════════════════════════════════════════════════════════════════════
+
+  · Telegram bot allowlist      only owner chat_id can DM the pod (env-pinned)
+  · OAuth scoping               ad-account access is manager-level (ops, not billing)
+  · No ad-spend on Hugo's books customer pays Google / Meta directly · no float
+  · Secret management           .env per pod · chmod 600 · never committed to git
+  · Network isolation           ── Hermes ports bound to 127.0.0.1 (Docker internal)
+                                ── Cloudflare Tunnel as only public ingress
+                                ── Tailscale for SSH (key-based)
+  · Cross-tenant isolation      ── separate Docker container per pod
+                                ── separate ~/.hermes/ data dir per pod
+                                ── separate SQLite memory file per pod
+                                ── separate Airtable workspace per pod
+                                ── no shared runtime state · no shared filesystem
+  · Code-enforced spend caps    hardcoded in MCP server wrappers (not in prompts)
+  · Forbidden-tokens guardrail  SKILL.md prevents leaking model / path / framework
+  · State-readback discipline   state queries re-invoke tools (mode: "readback")
+                                no replay from session memory · no direct file reads
+
+
+**Three things to highlight from this layout:**
+
+**Per-pod isolation is total.** Separate Docker container, separate ~/.hermes/ data dir, separate SQLite memory file, separate Airtable workspace, separate .env secrets file. Client A's brand context, plans, audits, and reports cannot enter Client B's prompt window — there's no shared filesystem path between them.
+
+**The customer subscriptions belong to the customer.** ChatGPT Plus, Google AI Pro, Google Ads, Meta Ads, SendGrid, GA4, Stripe — all on the customer's card, all authed per-pod. Hugo operates them via manager OAuth; the bills never come to Hugo. Trade-off: gives up margin on those line items. Gains: no PCI scope, no AR risk, no payment-processing surface.
+
+**The secrets tier is the only mixing point.** Every other layer is cleanly customer-owned or Hugo-owned. The .env file is where the customer's API keys (ChatGPT, Google AI Pro, ad-account OAuth tokens) sit next to the Hugo-org credentials (Upload-Post API key, Telegram bot token). chmod 600 + per-pod isolation + never-committed-to-git is the boundary that keeps that mixing safe.
 
 
 ---
