@@ -136,6 +136,114 @@ Restart=always
 
 One Node.js process (~400 MB RAM) on port 18789, hosting all seven personas internally. The same VPS also runs the production Psinest stack (nginx, Kestrel API, PostgreSQL) and holds the live repos at `/root/psinest-app/` and `/root/psinest-api/`. **Dev and prod share infrastructure** — a deliberate cost optimization for a pre-revenue product.
 
+### The topology
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ HOSTINGER VPS · 72.62.2.211 · Ubuntu 24.04 · 1 vCPU / 3.8 GB            │
+│                                                                        │
+│  OPENCLAW BUILD SYSTEM             PRODUCTION PSINEST APP              │
+│  ──────────────────────            ──────────────────────              │
+│                                                                        │
+│  systemd: openclaw.service         nginx (80, 443) ◄── Internet        │
+│       │                                 │                              │
+│       ▼                                 ▼                              │
+│  openclaw-wrapper.sh               Kestrel API (5000)                  │
+│       │                                 │                              │
+│       ▼                                 ▼                              │
+│  openclaw-gateway                  PostgreSQL 16 (5432)                │
+│  Node · port 18789                      ▲                              │
+│  7-agent team in-process                │ reads/writes                 │
+│  ~400 MB resident                       │                              │
+│       │                                 │                              │
+│       │ edits files on disk             │                              │
+│       ▼                                 │                              │
+│  /root/psinest-app/   ──────────────────┘                              │
+│  /root/psinest-api/    (cloned · agents push to GitHub from VPS)       │
+│                                                                        │
+│  /root/.openclaw/                                                      │
+│    openclaw.json     ← 7-agent config (models, dispatch allowlists)    │
+│    agents/<role>/    ← memory.sqlite · sessions/*.jsonl                │
+│    workspace/skills/ ← 23 reusable capability modules                  │
+│    runlog/                                                             │
+│                                                                        │
+│  cron */10 * * * * /root/dev-watchdog.sh                               │
+│    └─ stalled Dev session detected → commit WIP → re-dispatch          │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+External I/O:
+  Telegram (@Openclaw_Psinest_bot)        ◄── only public channel
+  GitHub  (jccosta94/psinest-{app,api})   ◄── gh CLI from VPS · pushes + PRs
+  Anthropic API                           ◄── per-token billing · 7 agents
+```
+
+The interesting bit is that **OpenClaw and the production Psinest stack share the same VPS**. The agents work directly on the cloned repos at `/root/psinest-{app,api}/`, push commits to GitHub, and GitHub Actions deploys back to the same machine. No separate dev environment; no separate prod environment. Pre-revenue economics.
+
+### Issue lifecycle — ticket → PR → deploy
+
+```
+                              Joao on Telegram
+                                    │
+                                    │ "ship issue #234"
+                                    ▼
+                          ┌────────────────────┐
+                          │ main (Haiku 4.5)   │  ← routes message
+                          └─────────┬──────────┘
+                                    │
+                                    ▼
+                          ┌────────────────────┐
+                          │ CEO (Sonnet 4.6)   │  ← prioritises
+                          │  reads task        │     picks worker
+                          └─────────┬──────────┘
+                                    │
+                                    ▼
+                          ┌────────────────────┐
+                          │ PM (Opus 4.6)      │  ← scopes work
+                          │  reads codebase    │     briefs worker
+                          └─────────┬──────────┘
+                                    │
+                          ┌─────────┴──────────┐    ← parallel
+                          ▼                    ▼
+                ┌────────────────────┐ ┌────────────────────┐
+                │ Dev (Opus 4.6)     │ │ Bugfix (Opus 4.6)  │
+                │  writes feature    │ │  patches bug       │
+                │  opens PR          │ │  opens PR          │
+                └─────────┬──────────┘ └─────────┬──────────┘
+                          │                       │
+                          ▼                       ▼
+                ┌────────────────────┐ ┌────────────────────┐
+                │ QA (Opus 4.6)      │ │ QA2 (Opus 4.6)     │
+                │  e2e tests         │ │  e2e tests         │
+                │  reports back      │ │  reports back      │
+                └─────────┬──────────┘ └─────────┬──────────┘
+                          │                       │
+                          └───────────┬───────────┘
+                                      │
+                                      ▼
+                          ┌────────────────────────┐
+                          │ PRs ready · ping Joao  │
+                          └────────────┬───────────┘
+                                       │
+                                       ▼
+                          ┌────────────────────────┐
+                          │ Joao reviews + merges  │  ← plain-text "yes"
+                          └────────────┬───────────┘
+                                       │
+                                       ▼
+                          ┌────────────────────────┐
+                          │ workflow_dispatch       │
+                          │  · API first            │
+                          │  · 60s wait             │
+                          │  · app second           │
+                          └────────────┬───────────┘
+                                       │
+                                       ▼
+                              VPS · live in prod
+```
+
+One Telegram message → one cascade through the org chart → parallel Dev + QA execution → Joao gates the merge + deploy. The 7-agent team handles everything between "ship #234" and "PRs ready to review."
+
 ### Auto-recovery: the dev-watchdog
 
 A cron job (`*/10 * * * * /root/dev-watchdog.sh`) runs every 10 minutes to detect stalled Dev sessions:
@@ -292,6 +400,47 @@ Don't migrate everything at once. Start with a maintenance lane — issues label
 ### Phase 3: keep v1 ready, run v2 as default
 
 For Psinest's current state: **v2 is the default; v1 is dormant but recoverable.** v2 handles all routine work. v1 stays in the systemd unit definition (currently disabled), ready to be re-enabled for launch crunches when you need the team-of-roles concurrency back. The crontab backup at `/root/crontab.backup-<timestamp>` includes the dev-watchdog reactivation line. Restoring v1 is a `systemctl enable && systemctl start && crontab <backup>` away.
+
+```
+                       GitHub issue created
+                                │
+                                ▼
+                    Has `hermes-ready` label?
+                                │
+                  ┌─────────────┴─────────────┐
+                 yes                          no
+                  │                           │
+                  ▼                           ▼
+       ┌────────────────────┐    ┌────────────────────────┐
+       │ v2 Hermes-Psinest  │    │ v1 OpenClaw team       │
+       │                    │    │                        │
+       │ default lane       │    │ dormant — re-enable    │
+       │ flat subscription  │    │ for launch crunch only │
+       │ ~serial execution  │    │ metered API · parallel │
+       └─────────┬──────────┘    └───────────┬────────────┘
+                 │                            │
+                 ▼                            ▼
+         Codex orchestrates           systemctl start →
+                 │                    CEO → PM → Dev/Bugfix
+                 ▼                    → QA/QA2 (parallel)
+         Claude Code CLI                      │
+                 │                            ▼
+                 ▼                    N PRs opened in parallel
+         1 PR opened                          │
+                 │                            │
+                 └──────────────┬─────────────┘
+                                │
+                                ▼
+                    Joao reviews + merges
+                                │
+                                ▼
+                Manual `workflow_dispatch` deploy
+                                │
+                                ▼
+                          VPS · live
+```
+
+Both lanes converge at the same merge + deploy gate. The choice of which lane runs is a single GitHub label (`hermes-ready`). Default behaviour today: v2 picks everything up. v1 only spins up when we explicitly need the parallel team.
 
 **Don't kill v1 when you migrate to v2.** The optionality is worth more than the slight maintenance overhead.
 
