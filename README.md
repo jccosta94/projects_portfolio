@@ -45,9 +45,10 @@ This GitHub serves as a portfolio of AI systems, architecture experiments, opera
 
 ### Productized AI services
 
-#### 🤖 [Hugo](https://jccosta94.github.io/hugo-website/) — AI marketing employee for SMBs
+#### 🤖 [Hugo](./hugo/) — AI marketing employee for SMBs
 **Live commercial product.** Architected a single-agent AI marketing employee that talks to small-business owners via Telegram / Slack / WhatsApp / email and runs their ads, website, creative, Google Business profile, reviews, outreach, and weekly reports. **Approval-gated workflow:** Hugo prepares work, owner approves via chat reply, Hugo launches.
-**Architecture decisions:** single-agent persona with persistent business context · approval-routing across messaging channels · per-task model selection (ads copy vs creative gen vs report writing) · budget-limit enforcement gates before any action · weekly cadence orchestration (Monday plan / midweek check / Friday report / monthly review).
+**Architecture decisions:** single-agent persona with persistent business context · approval-routing across messaging channels · per-task model selection (ads copy vs creative gen vs report writing) · budget-limit enforcement gates before any action · weekly cadence orchestration (Monday plan / midweek check / Friday report / monthly review) · client ad spend stays on client's own Google/Meta accounts (Hugo operates them, doesn't hold money) · built on the same [OpenClaw](https://openclaw.ai/) gateway used for [the Psinest build pipeline](./openclaw-hermes-evolution/) — configured as a single persona instead of a 7-agent team.
+**Case study:** [./hugo/](./hugo/) — architecture · capabilities · stack · design decisions · comparison vs alternatives
 **Live site:** [jccosta94.github.io/hugo-website](https://jccosta94.github.io/hugo-website/)
 
 #### 🎬 [Skoda AI Ops](./skoda-ai-ops/) — content automation for an automotive brand
