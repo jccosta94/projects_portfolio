@@ -19,6 +19,23 @@ Live and operating in pilot today. Free to clinics during pilot; will become pai
 
 ---
 
+## Screenshots
+
+Captured from the live product at [psinest.duckdns.org](https://psinest.duckdns.org) using the four permanent demo accounts (`clinica.teste`, `dr.teste`, `patient.teste`, `patient.preonboard.teste`). All data shown is synthetic — these are fixtures maintained on production specifically for spec/regression and portfolio use.
+
+| | |
+|---|---|
+| ![Landing + sign-in](./screenshots/01-landing.png) | ![Patient space — sessions](./screenshots/02-patient-sessions.png) |
+| **Landing + sign-in** — public marketing landing page with role-specific routing after authentication via Firebase. | **Patient space — sessions** — patient's own session history, with psy-attached homework on `/patient/dynamics/:id` (read-only) and self-upload documents at `/patient/documents`. |
+| ![Psychologist — patient detail](./screenshots/03-psy-patient-detail.png) | ![Psychologist — session notes](./screenshots/04-psy-session-notes.png) |
+| **Psychologist — patient detail** — caseload view with patient-attached dynamics, document timeline, partnership status. Psy sees only patients in their partnered clinics. | **Psychologist — session notes** — note-taking surface with future-state hooks for AI-augmented transcription + SOAP-note drafting (see roadmap below). |
+| ![Clinic Owner — dashboard](./screenshots/05-owner-dashboard.png) | ![Clinic Owner — reports + analytics](./screenshots/06-owner-reports.png) |
+| **Clinic Owner — dashboard** — psy roster, partnership status, aggregate metrics. Owner never sees patient data; document access blocked entirely at `RoleScope` layer. | **Clinic Owner — reports + analytics** — Recharts-driven cancellation + turnover analytics with per-clinic threshold (1–5 sessions, default 3) and scope selector. |
+| ![Admin — psy verification queue](./screenshots/07-admin-verification.png) | ![Document upload + permissions](./screenshots/08-documents.png) |
+| **Admin — psy verification queue** — Platform Admin reviews OPP / cédula credentials before activating new psychologist accounts. ERS compliance gate. | **Document upload + permissions** — `IDocumentStore` → Backblaze B2 storage with consent-aware permissions (patient self-upload vs psy-attached docs vs ClinicOwner blocked). |
+
+---
+
 ## Current-state architecture
 
 The full enterprise-level view, organised by tier — network edge, application, data, storage/external services, CI/CD.
