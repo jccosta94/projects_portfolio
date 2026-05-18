@@ -141,111 +141,148 @@ One Node.js process (~400 MB RAM) on port 18789, hosting all seven personas inte
 
 ### The topology
 
-The full enterprise-level view, organised by tier — process supervision, agent runtime, skills library, state + audit, code, production data + serving — plus the external integration layer outside the VPS.
+The full architecture, end to end: every tier, every integration, every security boundary. Organised top-down by layer — operator interface → network edge → VPS host (process supervision · agent runtime · skills · state · code · production serving) → external integrations → security boundaries.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ HOSTINGER VPS · 72.62.2.211 · Ubuntu 24.04 · 1 vCPU / 3.8 GB                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│ ┌─ PROCESS SUPERVISION TIER ───────────────────────────────────────────────┐│
-│ │ systemd → /usr/local/bin/openclaw-wrapper.sh → openclaw-gateway           ││
-│ │   Node.js · port 18789 · ~400 MB resident · 7 personas in-process         ││
-│ │   ExecStart: wrapper.sh · Restart: always · TimeoutStartSec: 30           ││
-│ │                                                                           ││
-│ │ cron (root)                                                               ││
-│ │   */10 * * * * /root/dev-watchdog.sh                                      ││
-│ │     ⤷ detects stalled Dev sessions · auto-commits WIP · re-dispatches    ││
-│ │     ⤷ logs to /var/log/dev-watchdog.log                                  ││
-│ │   17 */6 * * * /usr/local/bin/psinest-pg-dump                            ││
-│ │     ⤷ Postgres → Backblaze B2 · psinest-backups bucket · 4×/day          ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│ ┌─ AGENT RUNTIME TIER · in-process inside openclaw-gateway ────────────────┐│
-│ │ main    (Haiku 4.5)    Telegram message routing                           ││
-│ │ ceo     (Sonnet 4.6)   kanban scan · priority proposal · Joao approval    ││
-│ │ pm      (Opus 4.6)     scoping · codebase read · worker dispatch          ││
-│ │ dev     (Opus 4.6)     feature implementation · PR open                   ││
-│ │ bugfix  (Opus 4.6)     bug-fix lane (2nd dev) · PR open                   ││
-│ │ qa      (Opus 4.6)     e2e + integration testing                          ││
-│ │ qa2     (Opus 4.6)     e2e + integration testing                          ││
-│ │                                                                           ││
-│ │ Dispatch authorization (subagents.allowAgents whitelist):                 ││
-│ │   ceo  → {pm, dev, bugfix, qa, qa2}                                       ││
-│ │   pm   → {dev, bugfix, qa, qa2}                                           ││
-│ │   dev  → {qa, qa2}        bugfix → {qa, qa2}                              ││
-│ │   qa, qa2 → terminal (no further dispatch)                                ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│ ┌─ SKILLS LIBRARY · /root/.openclaw/workspace/skills/ · 23 modules ────────┐│
-│ │ Planning      task-planning · writing-plans · executing-plans            ││
-│ │               dispatching-parallel-agents                                 ││
-│ │ Quality       verification-before-completion · code-review-excellence    ││
-│ │               requesting-code-review · e2e-testing-patterns              ││
-│ │ Domain        architecture-patterns · database-schema-designer           ││
-│ │               security-best-practices · api-designer                     ││
-│ │ Debugging     systematic-debugging · performance-ecc                     ││
-│ │ Frontend      react-best-practices-2 · typescript-pro                    ││
-│ │               tailwind-design-system                                     ││
-│ │ Workflow      git-workflow · proactive-agent-skill · brainstorming       ││
-│ │ Testing       imbeasting-test-driven-development                         ││
-│ │                                                                           ││
-│ │ Each agent can invoke any skill at runtime · ships with OpenClaw         ││
-│ │ Skills are markdown specs · agents read + apply                          ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│ ┌─ STATE + AUDIT TIER · persistent context, logs, runlog ──────────────────┐│
-│ │ /root/.openclaw/openclaw.json        7-agent config · models · routing   ││
-│ │ /root/.openclaw/agents/<role>/                                            ││
-│ │   memory.sqlite                       per-agent persistent memory         ││
-│ │   sessions/*.jsonl                    turn-by-turn dispatch logs          ││
-│ │ /root/.openclaw/runlog/               human-audit trail (op journal)      ││
-│ │ /tmp/openclaw/openclaw-YYYY-MM-DD.log gateway runtime logs (rotated)      ││
-│ │ /var/log/dev-watchdog.log             watchdog cron activity              ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│ ┌─ CODE TIER · live repos on disk (agents edit in place) ──────────────────┐│
-│ │ /root/psinest-app/   React 19 + TypeScript + Vite 8 + Tailwind 4         ││
-│ │ /root/psinest-api/   ASP.NET Core 8 + EF Core 8                          ││
-│ │ /root/psinest-orchestration/ (private — Joao's CLAUDE.md / TASKS.md)     ││
-│ │   ⤷ Agents commit + push to GitHub · GH Actions deploys back here       ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│ ┌─ PRODUCTION SERVING + DATA TIER · same VPS as the build system ──────────┐│
-│ │            Internet                                                       ││
-│ │              ▼                                                            ││
-│ │ nginx 1.24 (80, 443) · TLS via Let's Encrypt                             ││
-│ │              ▼ reverse-proxy /api → localhost:5000                       ││
-│ │ Kestrel API (5000, localhost) · .NET 8                                   ││
-│ │              ▼ EF Core 8 · SQL                                           ││
-│ │ PostgreSQL 16 (5432, localhost) · db: psinest · peer auth                ││
-│ │              ⤷ pg-dump cron → Backblaze B2 (4×/day)                     ││
-│ └───────────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────────┘
-
-EXTERNAL INTEGRATION LAYER (outbound from VPS)
+```text
 ══════════════════════════════════════════════════════════════════════════════
+OPERATOR INTERFACE LAYER
+══════════════════════════════════════════════════════════════════════════════
+
+  Joao (operator)
+       │
+       │ DMs to @Openclaw_Psinest_bot · Telegram allowlist: Joao's user ID only
+       │ + manual `workflow_dispatch` on GH Actions for every deploy
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+NETWORK EDGE
+══════════════════════════════════════════════════════════════════════════════
+
+  ── Public ingress:   port 22  (SSH · key-only)
+                       port 80/443 (nginx + Let's Encrypt TLS · Psinest prod)
+  ── Internal-only:    port 5000  (Kestrel API · 127.0.0.1)
+                       port 5432  (Postgres   · 127.0.0.1 · peer auth)
+                       port 18789 (OpenClaw   · 127.0.0.1)
+       │
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+HOSTINGER VPS HOST  ·  72.62.2.211  ·  Ubuntu 24.04  ·  1 vCPU / 3.8 GB RAM
+══════════════════════════════════════════════════════════════════════════════
+
+  ┌─ PROCESS SUPERVISION ─────────────────────────────────────────────────────┐
+  │ systemd                                                                    │
+  │   └─ /usr/local/bin/openclaw-wrapper.sh → openclaw-gateway                 │
+  │      Node.js · port 18789 · ~400 MB resident · 7 personas in-process       │
+  │      ExecStart: wrapper.sh · Restart: always · TimeoutStartSec: 30         │
+  │                                                                            │
+  │ cron (root)                                                                │
+  │   */10 * * * * /root/dev-watchdog.sh                                       │
+  │     ⤷ detects stalled Dev sessions · auto-commits WIP · re-dispatches     │
+  │     ⤷ logs to /var/log/dev-watchdog.log                                   │
+  │   17 */6 * * * /usr/local/bin/psinest-pg-dump                              │
+  │     ⤷ Postgres → Backblaze B2 · psinest-backups bucket · 4×/day           │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ AGENT RUNTIME · in-process inside openclaw-gateway ──────────────────────┐
+  │ main    (Haiku 4.5)    Telegram message routing                            │
+  │ ceo     (Sonnet 4.6)   kanban scan · priority proposal · Joao approval     │
+  │ pm      (Opus 4.6)     scoping · codebase read · worker dispatch           │
+  │ dev     (Opus 4.6)     feature implementation · PR open                    │
+  │ bugfix  (Opus 4.6)     bug-fix lane (2nd dev) · PR open                    │
+  │ qa      (Opus 4.6)     e2e + integration testing                           │
+  │ qa2     (Opus 4.6)     e2e + integration testing                           │
+  │                                                                            │
+  │ Dispatch authorization (subagents.allowAgents whitelist):                  │
+  │   ceo  → {pm, dev, bugfix, qa, qa2}                                        │
+  │   pm   → {dev, bugfix, qa, qa2}                                            │
+  │   dev  → {qa, qa2}        bugfix → {qa, qa2}                               │
+  │   qa, qa2 → terminal (no further dispatch)                                 │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ SKILLS LIBRARY · /root/.openclaw/workspace/skills/ · 23 modules ─────────┐
+  │ Planning      task-planning · writing-plans · executing-plans             │
+  │               dispatching-parallel-agents                                  │
+  │ Quality       verification-before-completion · code-review-excellence     │
+  │               requesting-code-review · e2e-testing-patterns               │
+  │ Domain        architecture-patterns · database-schema-designer            │
+  │               security-best-practices · api-designer                      │
+  │ Debugging     systematic-debugging · performance-ecc                      │
+  │ Frontend      react-best-practices-2 · typescript-pro                     │
+  │               tailwind-design-system                                      │
+  │ Workflow      git-workflow · proactive-agent-skill · brainstorming        │
+  │ Testing       imbeasting-test-driven-development                          │
+  │                                                                            │
+  │ Each agent can invoke any skill at runtime · ships with OpenClaw          │
+  │ Skills are markdown specs · agents read + apply                           │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ STATE + AUDIT · persistent context, logs, runlog ────────────────────────┐
+  │ /root/.openclaw/openclaw.json        7-agent config · models · routing    │
+  │ /root/.openclaw/agents/<role>/                                             │
+  │   memory.sqlite                       per-agent persistent memory          │
+  │   sessions/*.jsonl                    turn-by-turn dispatch logs           │
+  │ /root/.openclaw/runlog/               human-audit trail (op journal)       │
+  │ /tmp/openclaw/openclaw-YYYY-MM-DD.log gateway runtime logs (rotated)       │
+  │ /var/log/dev-watchdog.log             watchdog cron activity               │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ CODE · live repos on disk (agents edit in place) ────────────────────────┐
+  │ /root/psinest-app/             React 19 + TypeScript + Vite 8 + Tailwind 4 │
+  │ /root/psinest-api/             ASP.NET Core 8 + EF Core 8                  │
+  │ /root/psinest-orchestration/   (private — CLAUDE.md / TASKS.md / HANDOFF) │
+  │   ⤷ Agents commit + push to GitHub · GH Actions deploys back here        │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ PRODUCTION SERVING + DATA · same VPS as the build system ────────────────┐
+  │   Internet                                                                 │
+  │     ▼                                                                      │
+  │   nginx 1.24 (80, 443) · TLS via Let's Encrypt                            │
+  │     ▼ reverse-proxy /api → localhost:5000                                 │
+  │   Kestrel API (5000, localhost) · .NET 8                                  │
+  │     ▼ EF Core 8 · SQL                                                     │
+  │   PostgreSQL 16 (5432, localhost) · db: psinest · peer auth               │
+  │     ⤷ pg-dump cron → Backblaze B2 (4×/day)                               │
+  └────────────────────────────────────────────────────────────────────────────┘
+       │
+       │ outbound API calls + git push
+       ▼
+
+══════════════════════════════════════════════════════════════════════════════
+EXTERNAL INTEGRATION LAYER  (outbound from the VPS)
+══════════════════════════════════════════════════════════════════════════════
+
   Anthropic API ────── per-token billing · 7 agents (v1)
                        Opus 4.6 · Sonnet 4.6 · Haiku 4.5
   Telegram Bot API ─── @Openclaw_Psinest_bot · only public channel
                        allowlist: only Joao's user ID can DM
   GitHub API ────────── gh CLI from VPS · push, PRs, gh project (kanban)
                        jccosta94/psinest-{app,api,orchestration}
-  Backblaze B2 ──────── psinest-backups · nightly pg-dump archives
+  Backblaze B2 ──────── psinest-backups · 4×/day pg-dump archives
                        psinest-uploads · production document storage
   Sentry ────────────── org psinest · 2 projects (dotnet-aspnetcore, psinest-app)
                        exception capture from the production stack
   Firebase Auth ─────── project psinestv2 · JWT issue/verify
                        SPA browser sign-in + API server-side verification
 
+══════════════════════════════════════════════════════════════════════════════
 SECURITY BOUNDARIES
 ══════════════════════════════════════════════════════════════════════════════
-  · OAuth token (Claude Code) exported in wrapper.sh → not in repo
-  · Telegram allowlist restricts who can DM the agent team
-  · GitHub PAT scoped to repos + project (read-write)
-  · Postgres: localhost-only listen, peer auth (no network exposure)
-  · Internal ports (5000, 5432, 18789): bound to 127.0.0.1, not exposed
-  · Public ports: 22 (SSH key-only), 80/443 (nginx + TLS)
+
+  · OAuth scoping              Claude Code OAuth token exported in wrapper.sh
+                               (never committed to git)
+  · Telegram allowlist         only Joao's user ID can DM @Openclaw_Psinest_bot
+  · GitHub PAT scoping         repos + project (read-write) · no admin scopes
+  · Postgres isolation         localhost-only listen + peer auth
+                               no network exposure
+  · Internal-port binding      5000 (Kestrel) · 5432 (Postgres) · 18789 (OpenClaw)
+                               all bound to 127.0.0.1
+  · Public ingress             only 22 (SSH key-only) + 80/443 (nginx + TLS)
+  · Dev/prod co-location       dev-time and prod runtime share one box
+                               pre-revenue cost choice · accepted explicitly
+  · Three human-in-the-loop    (1) priority approval — CEO proposes, Joao picks
+    gates per cycle            (2) merge approval — Joao reviews every PR
+                               (3) deploy trigger — Joao runs `workflow_dispatch`
 ```
 
 Two things to highlight from this layout:
