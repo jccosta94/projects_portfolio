@@ -8,7 +8,7 @@ The system ships code to [Psinest](https://github.com/jccosta94/psinest), a prod
 
 ### What I architected
 
-**v1 — a hierarchical 7-agent team** on top of [OpenClaw](https://openclaw.ai/) (by [@steipete](https://x.com/steipete)): a Telegram-routed org chart with **CEO → PM → Dev + Bugfix → QA + QA2** (plus a Haiku-based router fielding incoming messages). I designed the dispatch-authorization graph (`subagents.allowAgents` whitelists), the per-agent model routing (Sonnet 4.6 for the CEO, Opus 4.6 for all five workers, Haiku 4.5 for routing), the system prompts for each role, and the `dev-watchdog.sh` auto-recovery cron that catches stalled Dev sessions and re-dispatches with context. Runs as a single systemd service on a Hostinger VPS that *also* hosts the production Psinest stack — a deliberate co-location for cost reasons. **This is the architecture that solved velocity.**
+**v1 — a hierarchical 7-agent team** on top of [OpenClaw](https://openclaw.ai/) (by [@steipete](https://x.com/steipete)): a Telegram-routed org chart with **CEO → PM → Dev + Bugfixing Dev → QA + QA2** (plus a Haiku-based router fielding incoming messages). I designed the dispatch-authorization graph (`subagents.allowAgents` whitelists), the per-agent model routing (Sonnet 4.6 for the CEO, Opus 4.6 for all five workers, Haiku 4.5 for routing), the system prompts for each role, and the `dev-watchdog.sh` auto-recovery cron that catches stalled Dev sessions and re-dispatches with context. Runs as a single systemd service on a Hostinger VPS that *also* hosts the production Psinest stack — a deliberate co-location for cost reasons. **This is the architecture that solved velocity.**
 
 **v2 — a single autonomous dispatcher** on top of [Hermes Agent](https://hermes-agent.nousresearch.com/) (open source, by [Nous Research](https://nousresearch.com)): when 5 workers on Opus 4.6 at production cadence stopped being financially defensible, I re-architected the system around a Docker-isolated Hermes instance orchestrated by Codex (gpt-5.4-mini, OpenAI subscription) that shells out to Claude Code CLI (Claude Max subscription) as its code-writing tool. I wrote the SOUL.md identity prompt, the `runlog/` audit-trail structure, the `hermes-ready` issue-label routing protocol, and the Docker isolation pattern that keeps this instance independent of the native Hermes install. **This is the architecture that made velocity sustainable.**
 
@@ -26,7 +26,7 @@ This repo documents the architecture of each generation: the topology I designed
 |---|---|---|
 | **Solves which problem** | **Velocity** — ship at production cadence | **Economics** — make that cadence sustainable |
 | **Platform** | [openclaw.ai](https://openclaw.ai/) by @steipete | [hermes-agent.nousresearch.com](https://hermes-agent.nousresearch.com/) (MIT, Nous Research) |
-| **Architecture** | **Team of 7 personas in 1 gateway**: hierarchical org chart (CEO → PM → Dev + Bugfix → QA + QA2 + Haiku router) | **Single autonomous dispatcher** in Docker, calls Claude Code CLI as a tool |
+| **Architecture** | **Team of 7 personas in 1 gateway**: hierarchical org chart (CEO → PM → Dev + Bugfixing Dev → QA + QA2 + Haiku router) | **Single autonomous dispatcher** in Docker, calls Claude Code CLI as a tool |
 | **Models** | Anthropic API: **5 agents on Opus 4.6**, CEO on Sonnet 4.6, router on Haiku 4.5 | Codex orchestrator (gpt-5.4-mini, OpenAI subscription) → Claude Code CLI (Claude Max subscription) |
 | **Billing** | Anthropic API · metered per token | OpenAI Plus/Pro + Claude Max · flat monthly |
 | **Cost** | Material monthly line item — metered, scales with cadence | Flat subscription — bounded regardless of throughput |
@@ -82,18 +82,18 @@ OpenClaw is an off-the-shelf "personal AI assistant" platform that supports conf
                        └──────┬───────┘
                               │ can dispatch to workers
                               ▼
-              ┌───────────────┴───────────────┐
-              ▼                               ▼
-       ┌────────────┐                 ┌────────────┐
-       │  Dev 💻    │                 │ Bugfix 🐛  │   ← both Opus 4.6
-       │ (features) │                 │ (bugs)     │
-       └─────┬──────┘                 └─────┬──────┘
-             │ can dispatch to QAs          │
-             ▼                               ▼
-       ┌────────────┐                 ┌────────────┐
-       │   QA 🔍    │                 │  QA2 🧪    │   ← both Opus 4.6
-       │ (testing)  │                 │ (testing)  │
-       └────────────┘                 └────────────┘
+              ┌───────────────┴────────────────────┐
+              ▼                                    ▼
+       ┌────────────┐                ┌────────────────────┐
+       │  Dev 💻    │                │ Bugfixing Dev 🐛   │   ← both Opus 4.6
+       │ (features) │                │      (bugs)        │
+       └─────┬──────┘                └──────────┬─────────┘
+             │ can dispatch to QAs              │
+             ▼                                  ▼
+       ┌────────────┐                ┌────────────────────┐
+       │   QA 🔍    │                │      QA2 🧪        │   ← both Opus 4.6
+       │ (testing)  │                │     (testing)      │
+       └────────────┘                └────────────────────┘
        terminal: no subagent dispatch
 ```
 
@@ -203,22 +203,22 @@ The interesting bit is that **OpenClaw and the production Psinest stack share th
                           │  reads codebase    │     briefs worker
                           └─────────┬──────────┘
                                     │
-                          ┌─────────┴──────────┐    ← parallel
-                          ▼                    ▼
-                ┌────────────────────┐ ┌────────────────────┐
-                │ Dev (Opus 4.6)     │ │ Bugfix (Opus 4.6)  │
-                │  writes feature    │ │  patches bug       │
-                │  opens PR          │ │  opens PR          │
-                └─────────┬──────────┘ └─────────┬──────────┘
-                          │                       │
-                          ▼                       ▼
-                ┌────────────────────┐ ┌────────────────────┐
-                │ QA (Opus 4.6)      │ │ QA2 (Opus 4.6)     │
-                │  e2e tests         │ │  e2e tests         │
-                │  reports back      │ │  reports back      │
-                └─────────┬──────────┘ └─────────┬──────────┘
-                          │                       │
-                          └───────────┬───────────┘
+                          ┌─────────┴────────────────┐    ← parallel
+                          ▼                          ▼
+                ┌────────────────────┐ ┌──────────────────────────┐
+                │ Dev (Opus 4.6)     │ │ Bugfixing Dev (Opus 4.6) │
+                │  writes feature    │ │  patches bug             │
+                │  opens PR          │ │  opens PR                │
+                └─────────┬──────────┘ └─────────────┬────────────┘
+                          │                          │
+                          ▼                          ▼
+                ┌────────────────────┐ ┌──────────────────────────┐
+                │ QA (Opus 4.6)      │ │ QA2 (Opus 4.6)           │
+                │  e2e tests         │ │  e2e tests               │
+                │  reports back      │ │  reports back            │
+                └─────────┬──────────┘ └─────────────┬────────────┘
+                          │                          │
+                          └─────────────┬────────────┘
                                       │
                                       ▼
                           ┌────────────────────────┐
@@ -421,7 +421,7 @@ For Psinest's current state: **v2 is the default; v1 is dormant but recoverable.
                  │                            │
                  ▼                            ▼
          Codex orchestrates           systemctl start →
-                 │                    CEO → PM → Dev/Bugfix
+                 │                    CEO → PM → Dev/Bugfixing Dev
                  ▼                    → QA/QA2 (parallel)
          Claude Code CLI                      │
                  │                            ▼
@@ -453,7 +453,7 @@ For clear credit attribution:
 | Concern | Platform provides | My architectural contribution |
 |---|---|---|
 | **Chat orchestration** | OpenClaw: Telegram/Discord/WhatsApp channels, agent gateway, persona system; Hermes: autonomous loop, multi-platform messaging | Configured the channels (Telegram-only allowlist), wrote the bot allowlist policy |
-| **Multi-agent topology** | OpenClaw: agent personas, `subagents.allowAgents` dispatch authorization, skills system; Hermes: subagent delegation | Designed the 7-agent **org-chart hierarchy** (CEO → PM → Dev+Bugfix → QA+QA2), wrote the dispatch allowlists, picked who's terminal vs who can recurse |
+| **Multi-agent topology** | OpenClaw: agent personas, `subagents.allowAgents` dispatch authorization, skills system; Hermes: subagent delegation | Designed the 7-agent **org-chart hierarchy** (CEO → PM → Dev+Bugfixing Dev → QA+QA2), wrote the dispatch allowlists, picked who's terminal vs who can recurse |
 | **Per-agent system prompts** | OpenClaw / Hermes: load arbitrary markdown / SOUL.md as system prompt | Wrote each agent's identity, scope, branch-guard rules, contract-verification protocol |
 | **Model routing** | OpenClaw / Hermes: per-agent `model` field in config | Decided which agent gets Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5 — and *why* |
 | **Audit trail** | Hermes: optional logging; OpenClaw: per-agent SQLite memory | Designed the `runlog/{status,log,prompts/,claude-output/}` structure; ensured every Claude prompt is reproducible |

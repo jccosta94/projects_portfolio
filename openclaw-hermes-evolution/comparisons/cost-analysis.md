@@ -12,13 +12,13 @@ This document exists because of a sequence: I configured a 7-agent team on [Open
 |---|---|---|---|
 | **Solves which problem** | Velocity (ship at cadence) | Economics (sustain that cadence) | — |
 | **Phase** | Build & validate the pipeline | Run the validated pipeline | Sequential |
-| **Architecture** | Hierarchical team: CEO → PM → Dev + Bugfix → QA + QA2 | Single dispatcher → Claude Code CLI | Different |
+| **Architecture** | Hierarchical team: CEO → PM → Dev + Bugfixing Dev → QA + QA2 | Single dispatcher → Claude Code CLI | Different |
 | **Cost model** | Metered per token (Anthropic API) | Flat subscription (OpenAI Plus/Pro + Claude Max) | Predictability ↑↑ |
 | **Monthly cost** | Material line item — scales with throughput | Flat regardless of throughput | **Order-of-magnitude reduction** |
 | **Throughput** | High — 5 worker agents in parallel, no rate-limit ceiling | Meaningfully slower — single executor under subscription rate-limits | Material slowdown |
 | **Latency per PR** | Faster (parallel Dev + QA execution) | Slower (serialized through one dispatcher) | Trade-off |
 | **Quality** | High production-pass rate | Same quality — no measurable drop | No regression |
-| **Headline cost driver** | **5 agents on Opus 4.6** (PM, Dev, Bugfix, QA, QA2) | Flat Claude Max subscription | — |
+| **Headline cost driver** | **5 agents on Opus 4.6** (PM, Dev, Bugfixing Dev, QA, QA2) | Flat Claude Max subscription | — |
 
 **Headline finding:** moving from a 7-agent team on Anthropic API metered pricing (v1) to a single-dispatcher pattern on subscription-tier orchestration (v2) **cut monthly burn by an order of magnitude** while reducing throughput **meaningfully but not catastrophically**. **Quality did not measurably degrade** — the underlying code executor is still Claude (now invoked under subscription instead of API) — and the developer workflow (GitHub-issue-driven, Telegram-controlled, human-approves-merges) stayed identical.
 
@@ -62,14 +62,14 @@ The team configuration is captured in `/root/.openclaw/openclaw.json` (`agents.l
 
 ### Where the money went
 
-**Five agents on Opus 4.6 is the headline cost driver.** PM, Dev, Bugfix, QA, and QA2 — all on the most expensive model. The reasoning at the time:
+**Five agents on Opus 4.6 is the headline cost driver.** PM, Dev, Bugfixing Dev, QA, and QA2 — all on the most expensive model. The reasoning at the time:
 - **PM** sees the full ticket context + the relevant code surfaces — needs deep reasoning to scope correctly.
-- **Dev** and **Bugfix** write production code that humans review and merge — needs the strongest model for non-trivial features.
+- **Dev** and **Bugfixing Dev** write production code that humans review and merge — needs the strongest model for non-trivial features.
 - **QA** and **QA2** write integration tests that must understand the full request → response → DB chain — needs reasoning across multiple subsystems.
 
 CEO was downgraded to Sonnet 4.6 because strategy/scope calls don't need max-context-window reasoning — they need judgment, which Sonnet handles well at meaningfully lower cost. The `main` router runs on Haiku because "which agent gets this message" is a near-trivial classification task.
 
-Cost-per-agent ratio was roughly: **Dev > Bugfix > PM > QA ≈ QA2 > CEO > main** — with Dev consuming the majority of monthly Anthropic spend at peak cadence.
+Cost-per-agent ratio was roughly: **Dev > Bugfixing Dev > PM > QA ≈ QA2 > CEO > main** — with Dev consuming the majority of monthly Anthropic spend at peak cadence.
 
 ### Cost scaling behaviour
 
@@ -83,7 +83,7 @@ There's no economy of scale. This is the fundamental problem with metered API pr
 
 ### What worked well in v1 (despite the cost)
 
-- **Parallel agent execution.** Dev and Bugfix could work on separate features simultaneously. QA and QA2 could test independently. The gateway handled fan-out naturally.
+- **Parallel agent execution.** Dev and Bugfixing Dev could work on separate features simultaneously. QA and QA2 could test independently. The gateway handled fan-out naturally.
 - **Strict authorization.** The `subagents.allowAgents` whitelist enforced the org chart — Dev couldn't bypass QA, QAs couldn't dispatch further work, CEO couldn't be confused with PM. This prevented runaway loops.
 - **dev-watchdog auto-recovery.** The 10-minute cron caught stalled Dev sessions, auto-committed WIP, re-dispatched with context. Critical for overnight or unattended runs where a session timeout would otherwise lose hours.
 - **Skills library.** OpenClaw's 23 pre-built skills (`dispatching-parallel-agents`, `task-planning`, `verification-before-completion`, etc.) gave each agent strong baseline capabilities without bespoke prompt engineering.
@@ -115,7 +115,7 @@ The team-of-roles structure is **gone in v2**. What's preserved:
 
 What's lost:
 - **Parallel execution**: subscription rate limits cap how many concurrent Claude Code invocations you can make. Effectively serial.
-- **Role specialization**: no separate Dev vs Bugfix vs QA vs QA2. Hermes routes everything through the same Claude Code prompt.
+- **Role specialization**: no separate Dev vs Bugfixing Dev vs QA vs QA2. Hermes routes everything through the same Claude Code prompt.
 - **Auto-recovery via watchdog**: replaced by Hermes's built-in PR-state monitoring (SOUL.md instructs Hermes to check existing PRs before re-dispatching).
 
 ### Cost scaling behaviour
@@ -173,7 +173,7 @@ v2 is slower. A PR cycle that completes quickly on v1 (with parallel Dev + QA ex
 
 ### 2. Concurrency loss
 
-v1's team could have **3-4 things in flight simultaneously** — Dev working a feature, Bugfix patching a bug, QA testing a PR, PM triaging a ticket. v2 does one thing at a time. For a single human reviewer this is *good* (no firehose of parallel PR notifications). For a larger team it's a bottleneck.
+v1's team could have **3-4 things in flight simultaneously** — Dev working a feature, Bugfixing Dev patching a bug, QA testing a PR, PM triaging a ticket. v2 does one thing at a time. For a single human reviewer this is *good* (no firehose of parallel PR notifications). For a larger team it's a bottleneck.
 
 ### 3. Architectural complexity hidden in v1's per-agent prompts
 

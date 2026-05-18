@@ -63,12 +63,12 @@ Live at [psinest.duckdns.org](https://psinest.duckdns.org). Portuguese-language 
 
 #### ⚙️ [OpenClaw-Hermes Evolution](./openclaw-hermes-evolution/) — multi-agent build system
 **Built to solve a velocity problem. Evolved to solve the economics problem velocity created.** A 4-person team couldn't ship Psinest at the cadence the pilot required, and hiring wasn't viable — so I architected an AI dev team on top of two off-the-shelf agentic platforms, in sequence:
-- **v1 (OpenClaw) — solved velocity.** Configured [OpenClaw](https://openclaw.ai/) (by [@steipete](https://x.com/steipete)) as a **hierarchical 7-agent team** on a VPS: Telegram → CEO → PM → Dev + Bugfix → QA + QA2. All on **Anthropic API metered pricing** — **5 worker agents on Opus 4.6**, CEO on Sonnet 4.6, Haiku-based router. Production cadence achieved. The monthly Anthropic bill then became its own problem.
+- **v1 (OpenClaw) — solved velocity.** Configured [OpenClaw](https://openclaw.ai/) (by [@steipete](https://x.com/steipete)) as a **hierarchical 7-agent team** on a VPS: Telegram → CEO → PM → Dev + Bugfixing Dev → QA + QA2. All on **Anthropic API metered pricing** — **5 worker agents on Opus 4.6**, CEO on Sonnet 4.6, Haiku-based router. Production cadence achieved. The monthly Anthropic bill then became its own problem.
 - **v2 (Hermes) — solved economics.** Migrated to [Hermes Agent](https://hermes-agent.nousresearch.com/) (open source, by [Nous Research](https://nousresearch.com)). **Single autonomous dispatcher** in Docker, orchestrated by Codex (gpt-5.4-mini, OpenAI Plus/Pro subscription) calling Claude Code CLI under Claude Max subscription. Flat monthly cost regardless of throughput, **order-of-magnitude cheaper** than v1. Lost the team-of-roles concurrency in exchange for a predictable bill.
 
 The headline lesson: **velocity first, economics second.** Prove the pattern works before optimizing what it costs. Documented: the hierarchical team design, per-agent model routing, throughput vs cost analysis, the v1→v2 migration playbook, when to run both in parallel.
 **Stack — adopted platforms:** OpenClaw (v1) · Hermes Agent (v2) · Claude Code CLI · Anthropic API (v1 metered) · OpenAI + Claude Max subscriptions (v2 flat) · Docker · Telegram Bot API · GitHub Actions · systemd
-**Stack — my architecture on top:** hierarchical agent role definitions (CEO/PM/Dev/Bugfix/QA/QA2) · dispatch-allowlist authorization · cron-based watchdog auto-recovery · GitHub-issue-driven workflow · dev-on-same-VPS-as-prod cost optimization
+**Stack — my architecture on top:** hierarchical agent role definitions (CEO/PM/Dev/Bugfixing Dev/QA/QA2) · dispatch-allowlist authorization · cron-based watchdog auto-recovery · GitHub-issue-driven workflow · dev-on-same-VPS-as-prod cost optimization
 
 ### AI workflow tools & vertical workflows
 
