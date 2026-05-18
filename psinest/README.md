@@ -4,6 +4,8 @@
 
 🌐 [psinest.duckdns.org](https://psinest.duckdns.org) · 🇵🇹 pt-PT first · 👥 ClinicOwner / Psychologist / Patient / Platform Admin roles · 🏥 RGPD + ERS-aware
 
+> **Note on the URL.** `psinest.duckdns.org` is a **placeholder domain for the pilot phase**. The current footprint is **10 psychologists + 1 clinic** running on this domain as the live test run. Once the pilot stabilises and feature scope is locked, the platform migrates to a permanent domain with a managed cert + production CDN. The architecture documented here is what the pilot runs on; the migration path is short (DNS + cert swap, no architectural change required).
+
 ---
 
 ## What Psinest is
