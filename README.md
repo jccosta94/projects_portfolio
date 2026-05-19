@@ -1,43 +1,36 @@
 # João Costa
+## AI Workflow Automation & Applied AI Systems
 
-**Enterprise AI Systems & Workflow Architect**
+Functional Salesforce consultant and business analyst transitioning into AI systems and workflow automation.
 
-Enterprise transformation consultant turned AI-native systems builder, specializing in multi-agent orchestration, operational AI workflows, autonomous business systems, and enterprise AI deployment architectures.
+Over the past months, I have been building and experimenting with AI-powered workflow systems, multi-agent orchestration setups, and operational automations across healthcare, CRM workflows, marketing operations, and internal business processes.
 
-Since September, I rapidly transitioned from traditional Salesforce and enterprise delivery consulting into designing and operating AI-first systems across healthcare, CRM workflows, marketing operations, and autonomous development environments. My work focuses on bridging business operations with modern AI orchestration patterns — combining LLMs, agents, retrieval systems, tool-calling, MCP integrations, and workflow automation into production-oriented operational systems.
+My work focuses on combining LLMs, automation tooling, orchestration workflows, and business operations into practical AI-enabled systems using Claude API, Claude Code, Gemini, MCP tooling, and workflow automation platforms.
 
-In a short timeframe, I have built and deployed:
+Projects and areas explored include:
 
-- AI-native CRM systems for healthcare operations
-- Multi-agent autonomous development environments
-- Enterprise AI copilots for Salesforce delivery workflows
-- Autonomous AI marketing operations systems
-- AI automation infrastructures for SMBs across DACH and Iberian markets
-- Local/private AI experimentation environments using Ollama and Apple Silicon
-- Operational orchestration systems integrating Claude, Gemini, MCP tooling, and AI-generated media pipelines
+- AI-native CRM workflows
+- Multi-agent orchestration systems
+- AI-assisted operational workflows
+- Workflow automation & copilots
+- AI marketing operations
+- Retrieval and orchestration concepts
+- Multi-model routing strategies
+- Local/private AI experimentation using Ollama
 
-### My architectural interests
+Alongside my AI projects, I bring several years of experience working in stakeholder-heavy enterprise environments across Salesforce consulting, CRM delivery, requirements engineering, UAT coordination, release execution, and cross-functional collaboration.
 
-- Agentic systems orchestration
-- Enterprise AI deployment
+Current focus areas:
+
+- AI workflow automation
+- Agentic systems & orchestration
 - Operational AI workflows
-- AI-native business systems
-- Retrieval and knowledge architectures
-- Human-in-the-loop automation
-- Cost-aware model routing
-- AI governance and operational reliability
-- AI transformation strategy
+- AI deployment concepts
+- Retrieval workflows
+- Human-in-the-loop systems
+- AI tooling ecosystems
 
-### Current focus areas
-
-- Azure AI Foundry & enterprise AI architecture
-- Agentic enterprise workflows
-- Retrieval-augmented operational systems
-- AI observability & evaluation
-- Multi-model orchestration strategies
-- Enterprise AI transformation and deployment
-
-This GitHub serves as a portfolio of AI systems, architecture experiments, operational workflows, and enterprise-oriented AI implementations exploring the intersection of autonomous systems, enterprise operations, and AI-native software architecture.
+This GitHub serves as a portfolio of AI systems, workflow experiments, operational automations, and applied AI projects exploring practical AI-enabled business operations.
 
 ---
 
