@@ -9,7 +9,7 @@ The system runs the content pipeline for [Skoda Clever Kaufen](https://skoda-cle
 
 **Claude Cowork as the operator cockpit.** Everything starts there. Cowork is the desktop AI app — Anthropic Claude with MCP-tool access — and it's where I (the operator) sit all day to manage the business. Through one chat surface I author and review content, drive the publishing library, talk to Firebase, Gmail, Airtable, Gemini, Veo, and Excalidraw via their MCP servers, edit landing pages, generate Preisvorschlag PDFs, look up lead statuses, and trigger every gated publishing action. There is no separate admin dashboard. There is no scheduled-task UI. **Cowork is the dashboard, the editor, the orchestrator, and the keyboard for the whole content operation.** The architecture choices below all flow from that — including the choice to have *only one* dashboard surface so the operator never has to context-switch between tools.
 
-**A three-generation evolution of a single-operator content engine.** v1 leaned entirely on agent prompts for compliance and broke within a week. v2 collapsed the compliance surface into a deterministic Python library that runs *before* any publishing API call fires. v3 leaned into Cowork as the entire management surface, used its native Automations feature for the weekly cadence so no separate scheduling runtime is needed, collapsed multi-channel publishing behind a single fan-out API, and bolted on Google Ads as a precision acquisition channel alongside the organic engine — with dual-tracked attribution so each system gets the data its optimiser was built for.
+**A three-generation evolution, with consolidation as the through-line.** v1 was a generic chat tab — no specialised cockpit, no library, no fail-closed guards — and broke within a week. v2 added a deterministic Python library that runs before every publishing API call, solving the compliance class of bugs, but the operator was still juggling separate tools for blog publishing, social scheduling, email, CRM, analytics, and landing-page deploys. v3 collapsed the entire operator surface into Cowork: one chat thread, one MCP fleet, one approval queue, one Automation scheduler. Along the way, multi-channel publishing collapsed behind a single fan-out API (Upload-Post), and Google Ads joined as a precision acquisition channel with dual-tracked attribution.
 
 **The publishing library is the load-bearing piece.** Roughly 300 lines of Python plus tests. It checks every payload for German-language signals (permissive heuristic, only blocks affirmative-English-with-zero-German), price hedging (every `€` value must be preceded by `ab` / `bis zu` / `ca.` / `etwa`, or the whole text framed as `Beispielrechnung`), a regex denylist with word-boundary enforcement (`Festpreis`, `garantierter Preis`, bare `Rechnung` — but compounds like `Beispielrechnung` pass), and channel-specific voice rules (LinkedIn requires `wir`, blocks `ich`). **If any check fails the publishing API call does not fire.** The LLM is allowed to be wrong; the library refuses to publish until it isn't. Every Cowork session — interactive or scheduled — calls the library before any publish; the library is the only path to the publishing APIs.
 
@@ -19,9 +19,11 @@ The system runs the content pipeline for [Skoda Clever Kaufen](https://skoda-cle
 
 ### The architectural insight
 
-The through-line is **putting determinism where the LLM is unreliable**. Brand voice can live in a prompt. Compliance cannot. The early version of this stack relied on system-prompt instructions ("do not use Festpreis", "always hedge prices with ab") and it worked roughly 95% of the time. The remaining 5% is regulatory exposure a small business cannot absorb. The fix was moving those rules from the prompt to a Python library with regex matching and positive-context validation. **The library is not smart; it is right.** That swap — soft prompt rules to hard library checks — is the single most important architecture decision in the whole system, and it generalises to any commercial AI system operating in a regulated domain.
+The through-line is **everything runs through one cockpit, and that cockpit is Claude Cowork.** The operator never leaves it. Through one chat thread, Cowork's MCP fleet reaches Firebase (for Hosting deploys, Firestore CRUD, Cloud Function logs), Gmail (for newsletter sends and dealer hand-off), Airtable (for the CRM), Gemini Nano Banana (for image generation), Veo 3.1 (for video), Excalidraw (for diagrams), the operator's own desktop (for one-off workflows), Cowork's native Automations scheduler (for the weekly cadence), and a custom MCP wrapper around the publishing library. The architectural bet was simple: **a single AI cockpit with the right MCP fleet replaces eight separate admin tools.** No bespoke CMS, no scheduler dashboard, no CRM frontend, no analytics dashboard, no landing-page editor. The conversational interface inside Cowork is the dashboard for everything. Without that consolidation the solo operator drowns in context-switching; with it, every action against the business happens in one place and the operator's leverage compounds.
 
-The second through-line: **organic and paid are routed separately, but the system reads them as one funnel.** Organic content is the volume play, compounding over months at near-zero marginal cost. Google Ads is the precision channel for in-market searches the organic library hasn't yet earned. GA4 (Consent Mode v2, default-denied) feeds conversions back to Google Ads for bid optimisation; a Firestore `quote_events` collection captures the same events as source-of-truth attribution for commission accounting. The two will disagree. That is by design — feed each system the version of the data its optimiser was built for, keep your own canonical copy for everything else.
+The second through-line is **putting determinism where the LLM is unreliable.** Brand voice can live in a prompt; compliance cannot. The publishing library — ~300 lines of Python with regex and positive-context validation — sits between every draft Cowork produces and every outbound API call. Fail-closed by default. The library is not smart; it is right. Inside the cockpit, the library is the deterministic guard that lets the operator delegate to Claude without supervising every word, and lets compliance-sensitive content ship safely under regulated-industry rules.
+
+The third through-line: **organic and paid are routed separately, but the system reads them as one funnel.** Organic content is the volume play, compounding over months at near-zero marginal cost. Google Ads is the precision channel for in-market searches the organic library hasn't yet earned. GA4 (Consent Mode v2, default-denied) feeds conversions back to Google Ads for bid optimisation; a Firestore `quote_events` collection captures the same events as source-of-truth attribution for commission accounting. The two will disagree. That is by design — feed each system the version of the data its optimiser was built for, keep your own canonical copy for everything else.
 
 This repo documents the architecture of each generation, the topology I designed on top of off-the-shelf platforms (Firebase + Cowork + Upload-Post), per-job model routing decisions, the v1 → v2 → v3 evolution, and the alternative deployment options I considered along the way (including a headless agent on a VPS — see [Alternative deployment](#alternative-deployment--headless-agent-on-a-vps) below).
 
@@ -29,37 +31,40 @@ This repo documents the architecture of each generation, the topology I designed
 
 ## TL;DR
 
-| | **v1 — Prompt-gated** | **v2 — Library-gated** | **v3 — Cowork-cockpit + Automations + dual attribution (current)** |
+| | **v1 — Prompt-gated** | **v2 — Library-gated** | **v3 — All ops in Cowork (current)** |
 |---|---|---|---|
-| **Solves which problem** | Nothing in production. Failed in <1 week. | **Compliance** — fail-closed on forbidden phrases and unhedged prices | **Cadence + distribution + acquisition** — scheduled drafts, single fan-out, paid + organic |
-| **Editorial control** | LLM system prompt | Python library (regex + heuristics) inspecting every payload pre-publish | Same library — called from Cowork on every publish, no agent bypasses it |
-| **Operator cockpit** | Generic Claude chat | Generic Claude chat | **[Claude Cowork](https://claude.com/cowork)** desktop — Cowork is the dashboard, editor, and orchestrator; every MCP server lives in one app |
-| **Scheduled work** | None | None | **Cowork Automations** — native recurring-task feature inside Cowork. Same Claude, same skills, same MCP fleet, same publishing library. No separate runtime to maintain. |
+| **Solves which problem** | Nothing in production. Failed in <1 week. | **Compliance** — fail-closed on forbidden phrases and unhedged prices | **Operator consolidation** — one AI cockpit replaces 8 admin tools, plus cadence + distribution + acquisition layered on top |
+| **Operator cockpit** | Generic Claude chat tab — no specialised surface | Generic Claude chat tab — library guards added, but the operator still juggles separate tools for blog, social, email, CRM, analytics | **[Claude Cowork](https://claude.com/cowork)** desktop — the entire business runs from one chat thread. Cowork is the dashboard, the editor, the scheduler, the CRM viewer, the analytics review, the PDF generator, the approval surface |
+| **Scheduled work** | None | None | **Cowork Automations** — native recurring-task feature inside Cowork. Same Claude, same skills, same MCP fleet, same publishing library. No separate runtime. |
+| **MCP fleet inside Cowork** | None | None | 8 servers — firebase · gmail · airtable · gemini-image · veo · excalidraw · computer-use · scheduled-tasks · custom skoda-mcp (publishing-library wrapper) |
+| **Editorial control** | LLM system prompt (advisory at best) | Python library — regex + heuristics inspecting every payload pre-publish | Same library — called from Cowork on every publish, no agent bypasses it |
+| **Approval gate** | None — agent publishes directly | Email approval (latency: hours) | **Telegram approval** (latency: minutes) — operator reads in Cowork, replies in Telegram |
 | **Publishing surface** | Per-channel APIs (YT, IG, X, LinkedIn) wired individually | Same | **Single fan-out** via [Upload-Post API](https://upload-post.com) — 4 channels, 1 call |
 | **Free-tier ceilings** | Direct API rate limits per channel | Same | Upload-Post: 10 uploads/month — forces rotation policy |
-| **Approval gate** | None — agent publishes directly | Email approval (latency: hours) | **Telegram approval** (latency: minutes) — same gate for interactive *and* scheduled drafts |
 | **Acquisition** | Organic only | Organic only | **Organic + Google Ads** with dual-tracked attribution (GA4 + Firestore `quote_events`) |
 | **Models — text** | Anthropic Claude | Same | Anthropic Claude primary · Ollama on VPS as resilience fallback only |
 | **Models — image** | Mid-tier diffusion | Same | Google Gemini (Nano Banana) — order-of-magnitude cheaper at this volume |
 | **Models — video** | None (manual) | None (manual) | Google Veo 3.1 — native synchronized audio · 9:16 + 16:9 |
-| **Compliance posture** | 95% reliable on prompt rules — 5% regulatory exposure | 100% on library-enforced rules — soft errors in style only | Same fail-closed library, plus operator review for judgement calls |
-| **What broke it / what survived** | Inconsistent output, compliance miss within a week — *killed* | No scheduling, separate per-channel integrations — *evolved* | Current — running |
+| **Compliance posture** | 95% reliable on prompt rules — 5% regulatory exposure | 100% on library-enforced rules — soft errors in style only | Same fail-closed library, plus operator review inside Cowork for judgement calls |
+| **What broke it / what survived** | Inconsistent output, compliance miss within a week — *killed* | Compliance solved, but the operator was still tool-juggling — *evolved* | Current — running |
 
-The headline insight: **the LLM is part of the system, not the system.** Every generation moved more of the load-bearing logic out of the model and into deterministic layers around it.
+The headline insight: **one AI cockpit, deterministic guards around it.** Every generation pulled more of the operator's surface into a single AI cockpit — landing on Claude Cowork in v3 — and pushed more of the load-bearing logic into deterministic layers around the LLM (the publishing library, the approval gate, the rotation policy, the dual-tracked attribution). The LLM is part of the system; the cockpit is the system.
 
 ---
 
 ## Why this matters
 
-Most small commercial AI systems in 2026 hit three walls in sequence: **compliance first, distribution second, attribution third.**
+Most small commercial AI systems in 2026 hit four walls: **cockpit fragmentation first, then compliance, distribution, and attribution.**
 
-**Wall 1 — Compliance.** A regulated domain (German consumer protection, GDPR, automotive price advertising rules) is not forgiving of a 95%-reliable system. The wrong word in a published price claim isn't a writing error, it's an exposure. Prompt-based instructions to "avoid Festpreis" are advisory at best. The system has to refuse to publish content that violates the rules — not be asked nicely to comply. **v2 solved this by moving the rules into a library that runs before the publishing API call.**
+**Wall 1 — Cockpit fragmentation.** A solo operator can't run a content business across eight separate admin tools: a CMS for the blog, a scheduler for social, a CRM for leads, an image tool for hero shots, a video editor for shorts, an email platform for newsletters, an analytics dashboard for GA4, and a landing-page builder. Each tool has its own login, its own mental model, its own dashboard, and most of them have nothing to say to each other. The context-switching cost alone defeats the small operation. **v3 solved this by collapsing the entire operator surface into Claude Cowork.** One AI cockpit, one chat thread, one MCP fleet reaching every external system. No bespoke admin UI — the conversational interface is the dashboard for everything. This is the foundational bet the rest of the architecture is built on; without it, none of the other walls could be solved at one-operator scale.
 
-**Wall 2 — Distribution.** Publishing the same piece of content to YouTube, Instagram, X, and LinkedIn from a one-person operation means maintaining four direct API integrations — four auth flows, four rate-limit profiles, four sets of edge cases. Engineering work that produces no business value. **v3 solved this by consolidating behind Upload-Post — single REST call, fan-out to all four.** The free tier's 10-uploads/month cap turned out to be a feature: it forced a rotation policy that prevents over-publishing.
+**Wall 2 — Compliance.** A regulated domain (German consumer protection, GDPR, automotive price advertising rules) is not forgiving of a 95%-reliable system. The wrong word in a published price claim isn't a writing error, it's an exposure. Prompt-based instructions to "avoid Festpreis" are advisory at best. The system has to refuse to publish content that violates the rules — not be asked nicely to comply. **v2 solved this by moving the rules into a library that runs before the publishing API call; v3 kept it as the deterministic guard layer inside the Cowork cockpit.**
 
-**Wall 3 — Attribution.** The moment paid acquisition enters the picture (Google Ads), conversion data lives in two places — GA4 (which the Ads bidder consumes) and your own database. They will disagree. Treating either as the single source of truth eventually breaks the books. **v3 solved this with dual-tracked attribution**: GA4 → Google Ads for bid optimisation, Firestore `quote_events` for source-of-truth commission accounting.
+**Wall 3 — Distribution.** Publishing the same piece of content to YouTube, Instagram, X, and LinkedIn from a one-person operation means maintaining four direct API integrations — four auth flows, four rate-limit profiles, four sets of edge cases. Engineering work that produces no business value. **v3 solved this by consolidating behind Upload-Post — single REST call, fan-out to all four.** The free tier's 10-uploads/month cap turned out to be a feature: it forced a rotation policy that prevents over-publishing.
 
-The lesson is **the sequence.** Solve compliance first, because shipping non-compliant content even once is a brand and legal event. Solve distribution next, because the per-channel integration work has no upside until you have content to distribute. Solve attribution last, because it only matters when you're spending money on acquisition. Doing them in a different order would have wasted weeks.
+**Wall 4 — Attribution.** The moment paid acquisition enters the picture (Google Ads), conversion data lives in two places — GA4 (which the Ads bidder consumes) and your own database. They will disagree. Treating either as the single source of truth eventually breaks the books. **v3 solved this with dual-tracked attribution**: GA4 → Google Ads for bid optimisation, Firestore `quote_events` for source-of-truth commission accounting.
+
+The lesson is **the sequence.** Solve cockpit fragmentation first because everything else compounds on it — a fragmented operator surface makes every other problem harder. Solve compliance next, because shipping non-compliant content even once is a brand and legal event. Solve distribution next, because the per-channel integration work has no upside until you have content to distribute. Solve attribution last, because it only matters when you're spending money on acquisition.
 
 The lesson is also **what stayed constant.** All three generations route through Firebase (Hosting + Functions + Firestore). All three use Airtable as the CRM. All three hand off to the dealer for the actual sale call. The internal architecture changed; the customer-facing surface and the lead-handling boundary didn't.
 
@@ -73,7 +78,7 @@ Three flow charts cover the system end to end: the **orchestrator** (how content
 
 How a draft becomes a published post. Cowork sits at the top as the cockpit; both lanes (interactive + Automations) produce the same payload shape and feed into the same publishing library. Nothing fans out to the publishing surfaces unless the library passes it and the operator approves.
 
-```
+```text
                        Cowork (cockpit · operator's Mac)
                                   │
                                   ▼
@@ -128,7 +133,7 @@ How a draft becomes a published post. Cowork sits at the top as the cockpit; bot
 
 How a customer becomes a tracked lead and arrives in front of the dealer. Organic and Google Ads traffic hit the same landing page and share the same downstream pipeline; the only difference is the `lead source` field on the Airtable record. The system deliberately stops automating at the dealer call — the conversation that closes the sale is a human relationship, not a script.
 
-```
+```text
                        Customer (Germany · in-market)
                                   │
                                   │ organic OR google-ads
@@ -173,7 +178,7 @@ How a customer becomes a tracked lead and arrives in front of the dealer. Organi
 
 GA4 and Firestore both capture every quote form submission. Each one is the right answer to a different question — GA4 is what Google Ads needs to optimise bids, Firestore is what the operator and the dealer need to settle commissions. Treating either as the single source of truth eventually breaks the books.
 
-```
+```text
                     Quote form fires (every submission)
                                   │
                                   ▼
@@ -213,34 +218,38 @@ Three gates total, each catching a class of error the layer above can't:
 
 ## v1 → v2 → v3 — what failed, what survived
 
-### v1 — Single agent, prompt-gated (week 1)
+### v1 — Generic chat tab, no cockpit, no library (week 1)
 
-The obvious first version. One LLM with a long system prompt covering tone of voice, language rules, compliance phrases, channel-specific formatting, and schedule. Operator gives direction, agent does the rest.
+The obvious first version. One LLM in a generic chat tab with a long system prompt covering tone of voice, language rules, compliance phrases, channel-specific formatting, and schedule. Operator gives direction, agent does the rest. No specialised cockpit, no MCP fleet, no library between the agent and the publishing APIs.
 
 **What failed:**
 - **Inconsistency.** Same instructions produced subtly different outputs on different days. Prices were sometimes hedged with `ab`, sometimes not. Brand voice drifted.
 - **Compliance.** A prompt instruction not to use `Festpreis` is honoured *most* of the time. Most isn't enough when the downside is a regulatory letter.
 - **No fail-closed.** If the model decided the instruction was advisory, the post went out anyway.
+- **No operator surface.** Even when the agent produced good drafts, the operator still had to copy them into a separate CMS, switch to a different tool to schedule, switch again to log the lead, switch again to check analytics. Eight separate tools, no consolidation.
 
 **What survived:** the Claude reasoning-model choice, the Firebase + Airtable substrate, the dealer hand-off boundary.
 
-**The lesson:** the LLM is part of the system, not the system. The system needs deterministic layers the LLM cannot route around.
+**The lesson:** the operator surface matters as much as the model. A generic chat tab without scaffolding can't run a business; the system needs a real cockpit AND deterministic layers around it.
 
-### v2 — Agent + guardrail library
+### v2 — Library bolted on, operator surface still fragmented
 
-Added a thin Python library between the LLM and the publishing API. Library owns the rules; LLM produces drafts; publishing call only fires if the library says yes.
+Added a thin Python library between the LLM and the publishing API. Library owns the rules; LLM produces drafts; publishing call only fires if the library says yes. The compliance problem went away.
 
 **What this solved:**
 - **Compliance class of bugs collapsed.** Library is the source of truth for what publishes; agent can't argue with regex.
 - **New rules are 1-line additions.** A new forbidden phrase = one regex line, deployed in seconds.
 - **The bug surface stayed small.** ~300 LOC plus tests.
 
-**What still didn't work:**
+**What still didn't work — and why this version still couldn't scale to a real one-operator business:**
+- **No unified cockpit.** Posts were drafted in a generic chat tab, then the operator switched to a separate CMS to publish the blog, then to Airtable to log the lead, then to GA4 to check traffic, then back to the chat tab for the next post. Eight tools, eight logins, eight mental models. The operator spent more time context-switching than producing.
 - **No scheduling.** Posts went out when the operator was at the keyboard. Nothing went out on weekends or evenings — exactly when social engagement peaks for this audience.
 - **Cron-on-laptop is brittle.** Mac sleeps overnight; jobs miss.
 - **Multi-channel publishing meant four direct integrations.** Disproportionate surface area for what it bought.
 
-### v3 — Cowork-cockpit + Automations + dual attribution (current)
+**The lesson:** solving compliance is necessary but nowhere near sufficient. Without consolidating the operator surface, the one-person economics still don't work.
+
+### v3 — All ops in Cowork (current)
 
 Four changes from v2:
 
@@ -290,13 +299,10 @@ This is the kind of "designed two options, picked the simpler one, kept the othe
 
 All diagrams in this repo are inline text-style ASCII inside fenced code blocks — readable on GitHub, version-controlled, diff-able, no rendering tooling required.
 
-- **Topology** — five-layer cockpit / editorial / acquisition / attribution / hand-off, plus the Cowork cockpit detail. See the [Topology section](#topology) above.
-- **Editorial pipeline** — draft → library → Telegram approval → publish, with channel routing. See the [Topology section](#topology) above.
-- **Orchestrator flow chart** — how a draft becomes a published post end-to-end. See [The orchestrator](#the-orchestrator) above.
-- **Lead funnel flow chart** — how a public visitor becomes a tracked CRM lead. See [Lead funnel](#lead-funnel) above.
-- **Attribution split flow chart** — why GA4 and Firestore deliberately disagree, and which optimiser consumes which copy. See [Attribution split](#attribution-split) above.
-- **Three-human-gates flow** — preview approval · channel-rotation discipline · CRM hand-off boundary. See the [Topology section](#topology) above.
-- **Deployment view** — operator Mac + Firebase + Upload-Post + Telegram + optional VPS (the headless alternative kept warm but not running). See [Alternative deployment — headless agent on a VPS](#alternative-deployment--headless-agent-on-a-vps) above.
+- **Orchestrator flow chart** — how a draft becomes a published post, both Cowork lanes feeding the same library + approval queue + fan-out. See [The orchestrator](#the-orchestrator) above.
+- **Lead funnel flow chart** — how a public visitor becomes a tracked CRM lead, organic and paid both routed through the same landing → quote → Airtable → dealer pipeline. See [The lead funnel](#the-lead-funnel) above.
+- **Attribution split flow chart** — why GA4 (for Google Ads bid optimisation) and Firestore (for commission accounting) deliberately disagree, and which optimiser consumes which copy. See [The attribution split](#the-attribution-split) above.
+- **Three-human-gates table** — preview approval · channel-rotation discipline · CRM hand-off boundary. See [Three human gates per content cycle](#three-human-gates-per-content-cycle) above.
 
 Not yet rendered: a media-generation flow (Gemini Nano Banana + Veo 3.1 pipeline) — will land as inline ASCII when the matching section of the case study is written.
 
@@ -369,7 +375,7 @@ The platforms do the heavy lifting; the editorial pipeline (library + approval g
 ## Status
 
 - ✅ **v3 — current production architecture.** Cowork cockpit operational. Cowork Automations configured for the five weekly content tasks. Publishing library deployed. Telegram approval gate active. Upload-Post integration live (first post 2026-05-05). Google Ads campaigns running. Dual attribution feeding both bidders and books.
-- ✅ **Architecture diagrams.** Five-layer system topology · editorial pipeline · three-human-gate approval flow · lead-capture / lead-funnel flow · attribution split (GA4 vs Firestore) · deployment view — all shipped as inline text-style ASCII in fenced code blocks. Media-generation flow (Gemini + Veo pipeline) pending.
+- ✅ **Architecture diagrams.** Orchestrator flow chart · lead funnel · attribution split · three-human-gates table · deployment view — all shipped as inline text-style ASCII in fenced code blocks. Media-generation flow (Gemini + Veo pipeline) pending.
 - ✅ **Case studies (4/6).** Business problem · architecture evolution · orchestration design · AI stack all in full prose. Cost routing + lessons learned in structured-outline form.
 - 🚧 **Workflows + orchestration deep-dives (9 files).** Outlined; full prose pending.
 - 🚧 **Partial code examples.** Publishing library snippets + Cloud Function excerpts pending sanitisation for public release.
