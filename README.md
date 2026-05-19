@@ -58,9 +58,9 @@ This GitHub serves as a portfolio of AI systems, workflow experiments, operation
 
 ### AI workflow tools & vertical workflows
 
-#### 💼 [Salesforce Delivery Copilot](./salesforce-delivery-copilot/)
-**Production-deployed.** AI copilot for Salesforce delivery teams. Takes meeting transcripts → produces structured notes → outputs process flows and user stories → keeps the project plan, phases, and deliverables continuously up to date. Single input becomes a coherent multi-artifact output.
-📖 [Case study](./salesforce-delivery-copilot/) *(in progress)*
+#### 💼 [Salesforce Delivery Copilot](./salesforce-delivery-copilot/) — AI copilot for Salesforce delivery work
+**Live engagement.** Cowork-configured copilot running on a DACH pharma-adjacent Salesforce delivery (Service Cloud + Experience Cloud, ~9-month rollout). Takes a single delivery conversation (discovery call, build review, steering readout) and fans it out across the deliverable surface — notes, process flows, user stories, plan deltas, decision-log entries, action items — all cross-referenced through a single ID space in a project-owned Airtable graph base. v1 was an n8n multi-agent system with a Telegram cockpit; v2 collapsed to Cowork + 11-skill library + cross-reference graph. **Headline lesson: the copilot doesn't compete with the Salesforce consultant — it makes the cross-artifact coherence work queryable.** Same configure-don't-build operating model that's worked for 20 years of Salesforce delivery, applied to the copilot that does the delivery.
+📖 [Case study](./salesforce-delivery-copilot/)
 
 #### 🤝 [Claude Cowork Vertical Workflows](./claude-cowork/)
 **Live consulting practice.** Three vertical templates on top of [Claude Cowork](https://claude.com/cowork) — same desktop install, same Claude, three different operator cockpits — varying only the MCP fleet, skill library, and HITL gate model. **Practice Command** (Healthcare, LIVE in PT) · **Legal Efficiency Suite** (Law Firms, LIVE × 2) · **Field Service Command** (Home Services, packaged) · **Command Center** (horizontal fallback). **Headline lesson: configure a reliable platform, don't build agents from scratch** — same operating model that worked for years of Salesforce CRM delivery, applied to AI cockpit delivery.
