@@ -71,13 +71,16 @@ This GitHub serves as a portfolio of AI systems, workflow experiments, operation
 ## Patterns and writing
 
 #### 📐 [Shared Architecture Patterns](./shared-architecture-patterns/)
-Cross-project patterns I keep coming back to: AI routing patterns, multi-agent design, orchestration philosophy, cost-vs-quality tradeoffs, enterprise AI governance, evaluation and observability.
+**Cross-project pattern catalog.** Nine architectural patterns extracted from the five case studies, each with the problem · the pattern · where it's exercised · when to reach for it. Includes the centralised access gate (`RoleScope.cs`), the parallel-tier capability gate (AI Policy Manager), single agent + MCP tools (Pattern C), the deterministic library between LLM and public API, three human-in-the-loop gates, verticalisation as configuration, and the "configure-don't-build" consulting philosophy.
+📖 [Pattern catalog](./shared-architecture-patterns/)
 
 #### 🗺️ [Diagrams Library](./diagrams/)
-Reusable architecture diagrams: enterprise RAG patterns, agentic systems, deployment topologies, orchestration patterns. All inline text-style ASCII inside fenced code blocks — readable on GitHub, version-controlled, diff-able.
+**Catalog index of every architecture diagram in this portfolio.** All diagrams inline as text-style ASCII inside fenced code blocks — readable on GitHub, version-controlled, diff-able, no rendering tooling required. Grouped by type: multi-agent topology · single-agent topology · enterprise per-pod/per-vertical detail · security architecture · permission models · evolution diagrams · deployment views. Plus the diagram-conventions style guide.
+📖 [Diagrams index](./diagrams/)
 
 #### ✍️ [Writing](./writing/)
-Essays on agentic systems and the economics of AI-augmented delivery: *Lessons from building agent companies*, *AI workflow architecture*, *Model routing economics*, *Enterprise AI deployment lessons*, *Orchestration bottlenecks*.
+**Short essays extracted from cross-portfolio lessons.** Three pieces, ~1,500 words each: *Velocity first, economics second* (the OpenClaw → Hermes migration pattern), *Configure a reliable platform, don't build a custom agent from scratch* (the Salesforce-consulting operating model applied to AI cockpit delivery), and *Put determinism where the LLM is unreliable* (the Skoda compliance-library pattern). More essays in the queue.
+📖 [Essays](./writing/)
 
 ---
 
